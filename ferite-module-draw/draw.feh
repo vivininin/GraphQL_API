@@ -1,0 +1,2552 @@
+uses 'array';
+uses 'cairo';
+uses 'image';
+uses 'math';
+uses 'pango';
+
+namespace modifies String {
+	object _cairo_surface;
+	object _cairo_context;
+	function _createTextExtents( string str, number size ) {
+		if( not ._cairo_surface ) {
+			._cairo_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, 0, 0 );
+		}
+		if( not ._cairo_context ) {
+			._cairo_context = new Cairo.Context( ._cairo_surface );
+			._cairo_context.selectFontFace( 'Sans', Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+		}
+		._cairo_context.setFontSize( size );
+		return ._cairo_context.textExtents( str );
+	}
+	function width( string str, number size ) {
+		number width = ._createTextExtents( str, size ).width;
+		return width + 5;
+	}
+	function height( string str, number size )
+		return ._createTextExtents( str, size ).height;
+}
+
+/**
+ * @namespace Draw
+ * @brief Contains classes for drawing images and documents
+ */
+namespace Draw
+{
+	/**
+	 * @variable SIZE_A4_PORTRAIT
+	 * @type number
+	 * @brief This is used to tell that the size should be A4 portrait
+	 */
+	final number SIZE_A4_PORTRAIT = 4;
+	
+	/**
+	 * @variable SIZE_A4_LANDSCAPE
+	 * @type number
+	 * @brief This is used to tell that the size should be A4 landscape
+	 */	
+	final number SIZE_A4_LANDSCAPE = 5;
+	
+	/**
+	 * @variable SIZE_LETTER_PORTRAIT
+	 * @type number
+	 * @brief This is used to tell that the size should be Letter portrait
+	 */
+	final number SIZE_LETTER_PORTRAIT = 43;
+	
+	/**
+	 * @variable SIZE_LETTER_LANDSCAPE
+	 * @type number
+	 * @brief This is used to tell that the size should Letter landscape
+	 */
+	final number SIZE_LETTER_LANDSCAPE = 44;
+	
+	/**
+	 * @class Position
+	 * @brief Describes a position in an image or document
+	 */
+	class Position
+	{
+		/**
+		 * @variable x
+		 * @type number
+		 * @brief The x position
+		 */
+		public number x;
+		
+		/**
+		 * @variable y
+		 * @type number
+		 * @brief The y position
+		 */
+		public number y;
+		
+		public function constructor( )
+		{
+			.x = 0;
+			.y = 0;
+		}
+		
+		/**
+		 * @function constructor
+		 * @declaration function constructor( number x, number y )
+		 * @brief Create a position with x and y as it's positions
+		 * @param number x the x position
+		 * @param number y the y position
+		 */
+		public function constructor( number x, number y )
+		{
+			.x = x;
+			.y = y;
+		}
+	}
+	/**
+	 * @end
+	 */
+	
+	/**
+	 * @class Color
+	 * @brief Describes a color in an image or document
+	 */
+	class Color
+	{
+		public number red;
+		public number green;
+		public number blue;
+		
+		/**
+		 * @function constructor
+		 * @declaration function constructor( number red, number green, number blue )
+		 * @param number red the amount of red (a value between 0 and 1)
+		 * @brief Create a new color with the specified amount of red, green, and blue 
+		 * @param number green the amount of green (a value between 0 and 1)
+		 * @param number blue the amount of blue (a value between 0 and 1) 
+		 */
+		public function constructor( number red, number green, number blue )
+		{
+			.red = red / 255.0;
+			.green = green / 255.0;
+			.blue = blue / 255.0;
+		}
+	}
+	/**
+	 * @end
+	 */
+	
+	/**
+	 * @class Base
+	 * @brief All types of images and documents extends this class
+	 */
+	abstract class Base
+	{
+		private object latestItemEndPosition;
+		protected number itemsRendered;
+		protected number width;
+		protected number height;
+		protected number marginTop;
+		protected number marginBottom;
+		protected number marginLeft;
+		protected number marginRight;
+		protected string background;
+		protected object surface;
+		protected object context;
+		
+		protected function create( number width, number height )
+		{
+			if( not width.isDouble() )
+				width += 0.0;
+			
+			if( not height.isDouble() )
+				height += 0.0;
+			
+			.width = width;
+			.height = height;
+			
+			.marginTop = 20.0;
+			.marginBottom = 20.0;
+			.marginLeft = 20.0;
+			.marginRight = 20.0;
+			
+			.latestItemEndPosition = new Draw.Position( 0, 0 );
+			.itemsRendered = 0;
+			
+			return true;
+		}
+		
+		protected function create( number size )
+		{
+			number width;
+			number height;
+			
+			// These are stolen from PDF::Writer
+			
+			switch( size )
+			{
+				case Draw.SIZE_LETTER_PORTRAIT:
+					width = 612.00;
+					height = 792.00;
+					break;
+				case Draw.SIZE_LETTER_LANDSCAPE:
+					width = 792.00;
+					height = 612.00;
+					break;
+				case Draw.SIZE_A4_LANDSCAPE:
+					width = 841.89;
+					height = 595.28;
+					break;	
+				case Draw.SIZE_A4_PORTRAIT:
+				default:
+					width = 595.28;
+					height = 841.89;
+			}
+			
+			return .create( width, height );
+		}
+		
+		/**
+		 * @function getWidth
+		 * @declaration function getWidth( )
+		 * @brief Get the width of the image or document
+		 * @return The width of the image or document
+		 */
+		public function getWidth( )
+			return .width;
+		
+		/**
+		 * @function getHeight
+		 * @declaration function getHeight( )
+		 * @brief Get the height of the document
+		 * @return The height of the document
+		 */
+		public function getHeight( )
+			return .height;
+		
+		/**
+		 * @function setMargin
+		 * @declaration function setMargin( number margin )
+		 * @brief Set the top, bottom, left and right margin
+		 * @param number margin the top, bottom, left and right margin
+		 */
+		public function setMargin( number margin )
+		{
+			.setMarginTop( margin );
+			.setMarginBottom( margin );
+			.setMarginLeft( margin );
+			.setMarginRight( margin );
+		}
+		
+		/**
+		 * @function setMarginTop
+		 * @declaration function setMarginTop( number marginTop )
+		 * @brief Set the top margin for the image or document
+		 * @param number marginTop The top margin
+		 */
+		public function setMarginTop( number marginTop )
+		{
+			.marginTop = marginTop;
+			if( .itemsRendered == 0 )
+				.latestItemEndPosition.y = .marginTop;
+		}
+		
+		/**
+		 * @function getMarginTop
+		 * @declaration function getMarginTop( )
+		 * @brief Get the top margin
+		 * @return The top margin
+		 */
+		public function getMarginTop( )
+			return .marginTop;
+		
+		/**
+		 * @function setMarginBottom
+		 * @declaration function setMarginBottom( number marginBottom )
+		 * @brief Set the bottom margin for the image or document
+		 * @param number marginBottom The bottom margin
+		 */
+		public function setMarginBottom( number marginBottom )
+			.marginBottom = marginBottom;
+				
+		/**
+		 * @function getMarginBottom
+		 * @declaration function getMarginBottom( )
+		 * @brief Get the bottom margin
+		 * @return The bottom margin
+		 */
+		public function getMarginBottom( )
+			return .marginBottom;
+		
+		/**
+		 * @function setMarginLeft
+		 * @declaration function setMarginLeft( number numberLeft )
+		 * @brief Set the left margin for the image or document
+		 * @param number marginLeft The left margin
+		 */
+		public function setMarginLeft( number marginLeft )
+			.marginLeft = marginLeft;
+				
+		/**
+		 * @function getMarginLeft
+		 * @declaration function getMarginLeft( )
+		 * @brief Get the left margin
+		 * @return The left margin
+		 */
+		public function getMarginLeft( )
+			return .marginLeft;
+		
+		/**
+		 * @function setMarginRight
+		 * @declaration function setMarginRight( number marginRight )
+		 * @brief set the right margin for the image or document
+		 * @param number marginRight The right margin
+		 */
+		public function setMarginRight( number marginRight )
+			.marginRight = marginRight;
+				
+		/**
+		 * @function getMarginRight
+		 * @declaration function getMarginRight( )
+		 * @brief Get the right margin
+		 * @return The right margin
+		 */
+		public function getMarginRight( )
+			return .marginRight;
+		
+		/**
+		 * @function renderItem
+		 * @declaration function renderItem( object item )
+		 * @brief Render an item to the image or document
+		 * @param object item the item that should be rendered
+		 */
+		public function renderItem( object item )
+		{
+			object limitPosition = new Draw.Position( );
+			limitPosition.x = .width - .marginRight;
+			limitPosition.y = .height - .marginBottom;
+			
+			if( not item.hasFixedPosition( ) )
+			{
+				object beginPosition = new Draw.Position( );
+				object endPosition = new Draw.Position( );
+				
+				beginPosition.x = .marginLeft;
+				
+				if( .itemsRendered == 0 )
+					beginPosition.y = .marginTop;
+				else
+					beginPosition.y = .latestItemEndPosition.y;
+				
+				endPosition = item.render( self, .context, beginPosition, limitPosition );
+				
+				.latestItemEndPosition = endPosition;
+				.itemsRendered++;
+			}
+			else
+			{
+				item.render( self, .context, limitPosition );
+			}
+			.surface.flush();
+		}
+		
+		/**
+		 * @function renderItems
+		 * @declaration function renderItems( array items )
+		 * @brief Render an array of items
+		 * @param array items an array of items that should be rendered
+		 */
+		public function renderItems( array items ) {
+			items.each() using ( item ) {
+				.renderItem( item );
+			};
+		}
+		
+		protected function renderBackground( )
+		{
+			object backgroundSurface = new Cairo.ImageSurface( .background );
+			.context.setSourceSurface( backgroundSurface, 0, 0 );
+			.context.paint( );
+		}
+		
+		/**
+		 * @function setBackground
+		 * @declaration function setBackground( string background )
+		 * @brief Set the background for the image or document
+		 * @param string background the background
+		 */
+		public function setBackground( string background )
+		{
+			.background = background;
+			if( .itemsRendered == 0 )
+				.renderBackground( );
+		}
+		
+		/**
+		 * @function newPage
+		 * @declaration function newPage( )
+		 * @brief Begins a new page in a document
+		 */
+		public function newPage( );
+		
+		function finish
+			.surface.finish();
+	}
+	/**
+	 * @end
+	 */
+	
+	/**
+	 * @class PDF
+	 * @extends Draw.Base
+	 * @brief A PDF document
+	 */
+	class PDF extends Draw.Base
+	{
+		private number pages;
+		
+		public function constructor( )
+		{
+			self( 'filename.pdf', Draw.SIZE_A4_PORTRAIT );
+		}
+		
+		public function constructor( string filename, number width, number height )
+		{
+			if( ( not super.create( width, height ) ) or ( not .create( filename ) ) )
+				return null;
+		}
+		
+		/**
+		 * @function constructor
+		 * @declaration function constructor( string filename, number size )
+		 * @brief Create a new PDF document
+		 * @param string filename the filename for the new PDF document
+		 * @param number size the size type this document should use
+		 */
+		public function constructor( string filename, number size )
+		{
+			if( ( not super.create( size ) ) or ( not .create( filename ) ) )
+				return null;
+		}
+		
+		private function create( string filename )
+		{
+			.surface = new Cairo.PDFSurface( filename, .width, .height );
+			.context = new Cairo.Context( .surface );
+			if( not .context )
+				return false;
+			.pages = 1;
+			return true;
+		}
+		
+		public function newPage( )
+		{
+			.context.showPage( );
+			.pages++;
+			if( .background )
+				.renderBackground( );
+		}
+	}
+	/**
+	 * @end
+	 */
+	
+	/**
+	 * @class PNG
+	 * @extends Draw.Base
+	 * @brief A PNG image
+	 */
+	class PNG extends Draw.Base
+	{
+		private string filename;
+		
+		public function constructor( )
+		{
+			self( 'filename.png', Draw.SIZE_A4_PORTRAIT );
+		}
+		
+		public function constructor( string filename, number width, number height )
+		{
+			if( ( not super.create( width, height ) ) or ( not .create( filename ) ) )
+				return null;
+		}
+		
+		/**
+		 * @function constructor
+		 * @declaration function constructor( number pageType )
+		 * @brief Create a new PNG image
+		 * @param string filename the name of the PNG file
+		 * @param number size the size type this document should use
+		 */
+		public function constructor( string filename, number size )
+		{
+			if( ( not super.create( size ) ) or ( not .create( filename ) ) )
+				return null;
+		}
+		
+		private function create( string filename )
+		{
+			.filename = filename;
+			.surface = new Cairo.ImageSurface( Cairo.FORMAT_ARGB32, .width, .height );
+			.context = new Cairo.Context( .surface );
+			.context.setSourceRGB( 1, 1, 1 );
+			.context.paint( );
+			.context.setSourceRGB( 0, 0, 0 );
+			.surface.writeToPNG( .filename );
+			return true;
+		}
+		
+		function renderItem( object item )
+		{
+			super.renderItem( item );
+			.surface.writeToPNG( .filename );
+		}
+	}
+	/**
+	 * @end
+	 */
+	
+	/**
+	 * @namespace Item
+	 * @brief Contains items that can be drawn to a PDF document
+	 * @warning An item that does not fit on the space it has to render
+	            itself on will not render itself to the document.
+	 */
+	namespace Item
+	{
+		/**
+		 * @class Item
+		 * @brief The base class for all items
+		 * @warning An item that does not fit on the space it has to render
+		            itself on will not render itself to the document.
+		 */
+		abstract class Item
+		{
+			boolean fixedPosition;
+			object beginPosition;
+			object backgroundColor;
+			number marginTop;
+			number marginBottom;
+			number marginLeft;
+			number marginRight;
+			
+			/**
+			 * @function setFixedPosition
+			 * @declaration function setFixedPosition( boolean fixedPosition )
+			 * @brief Set if the item has a fixed position in the document or not
+			 * @param boolean fixedPosition true or false
+			 */
+			public function setFixedPosition( boolean fixedPosition )
+				.fixedPosition = fixedPosition;
+			
+			/**
+			 * @function hasFixedPosition
+			 * @declaration function hasFixedPosition
+			 * @brief Check if te item has a fixed position or not
+			 * @return A boolean value. True if the item has ha fixed position
+			           false if it does not
+			 */
+			public function hasFixedPosition( )
+				return .fixedPosition;
+			
+			/**
+			 * @function setBeginPosition
+			 * @declaration function setBeginPosition
+			 * @brief Set the begin position for the item that is used if the item
+			          is set to have a fixed position
+			   @param object position A position object
+			 */
+			public function setBeginPosition( object position )
+				.beginPosition = position;
+			
+			/**
+			 * @function setBackgroundColor
+			 * @declaration function setBackgroundColor( object color )
+			 * @brief Set the background color for the item
+			 * @param object color an instance of Draw.Color object
+			 */
+			public function setBackgroundColor( object color)
+				.backgroundColor = color;
+			
+			/**
+			 * @function setMargin
+			 * @declaration function setMargin( number margin )
+			 * @brief Set the top, bottom, right and left margin
+			 * @param number margin the top, bottom, left and right margin
+			 */
+			public function setMargin( number margin )
+			{
+				.setMarginTop( margin );
+				.setMarginBottom( margin );
+				.setMarginLeft( margin );
+				.setMarginRight( margin );
+			}
+			
+			/**
+			 * @function setMarginTop
+			 * @declaration function setMarginTop( number marginTop )
+			 * @brief Set the top margin
+			 * @param number marginTop The top margin
+			 */
+			public function setMarginTop( number marginTop )
+				.marginTop = marginTop;
+			
+			/**
+			 * @function setMarginBottom
+			 * @declaration function setMarginBottom( number marginBottom )
+			 * @brief Set the bottom margin
+			 * @param number marginBottom The bottom margin
+			 */
+			public function setMarginBottom( number marginBottom )
+				.marginBottom = marginBottom;
+			
+			/**
+			 * @function setMarginLeft
+			 * @declaration function setMarginLeft( number marginLeft )
+			 * @brief Set the left margin
+			 * @param number marginLeft The left margin 
+			 */
+			public function setMarginLeft( number marginLeft )
+				.marginLeft = marginLeft;
+			
+			/**
+			 * @function setMarginRight
+			 * @declaration function setMarginRight( number marginRight )
+			 * @brief Set the right margin
+			 * @param number marginRight The right margin
+			 */
+			public function setMarginRight( number marginRight )
+				.marginRight = marginRight;
+			
+			/**
+			 * @function render
+			 * @declaration function render( object document, object context, object limitPosition );
+			 * @brief Render the item using the specified Cairo context with the set
+			          begin position as position this item should begin draw on
+			 * @param object document an instance of a Draw.Base object
+			 * @param object context the Cairo context that should be used to draw this item
+			 * @param object limitPosition the position this item is not allowed to exceed
+			 * return A Position object containing the end position of the item
+			 */
+			public function render( object document, object context, object limitPosition )
+			{
+				object beginPosition = new Draw.Position( 0, 0 );
+				
+				if( .beginPosition )
+					beginPosition = .beginPosition;
+				
+				return .render( document, context, beginPosition, limitPosition );
+			}
+			
+			/**
+			 * @function render
+			 * @declaration function render( object document, object context,
+			                                 object beginPosition, object limitPosition );
+			 * @brief Render the item using the specified Cairo context
+			 * @param object document an instance of a Draw.Base object
+			 * @param object context the Cairo context that should be used to draw this item
+			 * @param object beginPosition the position this item should begin draw on
+			 * @param object limitPosition the position this item is not allowed to exceed
+			 * return A Position object containing the end position of the item
+			 */
+			public function render( object document, object context,
+				object beginPosition, object limitPosition );
+		}
+		/**
+		 * @end
+		 */
+		
+		/**
+		 * @class SimpleText
+		 * @extends Draw.Item.Item
+		 * @brief An item used to draw simple text
+		 * @warning SimpleText does not wrap itself if it does not fit in
+		            the space it has to render itselfs in.
+		 */
+		class SimpleText extends Draw.Item.Item
+		{
+			string text;
+			object color;
+			string fontFace;
+			number fontSize;
+			boolean rotate;
+			number angle;
+			
+			constructor {
+				.color = new Draw.Color( 0, 0, 0 );
+				.fontFace = "Sans";
+				.fontSize = 12;
+				.rotate = false;
+				.angle = 0;
+			}
+			
+			function setText( string text )
+				.text = text;
+			
+			function setColor( object color )
+				.color = color;
+			
+			function setFontFace( string fontFace )
+				.fontFace = fontFace;
+			
+			function setFontSize( number fontSize )
+				.fontSize = fontSize;
+			
+			function rotate( number degrees ) {
+				.rotate = true;
+				.angle = degrees * ( Math.pi( ) / 180 );
+			}
+			
+			function extents() {
+				object surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, 1, 1 );
+				object context = new Cairo.Context( surface );
+				context.selectFontFace( .fontFace, Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+				context.setFontSize( .fontSize );
+				return context.textExtents( .text );
+			}
+			
+			function getHeight() {
+				return .extents().height;
+			}
+			function getWidth() {
+				object surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, 1, 1 );
+				object context = new Cairo.Context( surface );
+				object extents;
+				context.selectFontFace( .fontFace, Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+				context.setFontSize( .fontSize );
+				extents = context_text_extents( .text );
+				return extents.width;
+			}			
+			
+			function render( object document, object context,
+				object beginPosition, object limitPosition )
+			{
+				number width = .getWidth();
+				number height = .getHeight();
+				
+				context.save();
+				
+				if( .rotate ) {
+					context.translate( 0, document.getHeight( ) );
+					context.rotate( .angle );
+				}
+				
+				context.moveTo( beginPosition.x, beginPosition.y + height );
+				context.setSourceRGB( .color.red, .color.green, .color.blue );
+				context.selectFontFace( .fontFace, Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+				context.setFontSize( .fontSize );
+				
+				context.showText( .text );
+				
+				context.restore();
+				
+				return new Draw.Position( beginPosition.x + width,
+					beginPosition.y + height );
+			}
+		}
+		/**
+		 * @end
+		 */
+		
+		/**
+		 * @class Text
+		 * @extends Draw.Item.Item
+		 * @brief An item used to draw text
+		 * @warning Text that does not fit on the space it has to render itself
+		            on will be cut so it does fit if autoNewPage is turned off.
+		 */
+		class Text extends Draw.Item.Item
+		{
+			private string text;
+			private string font;
+			private object color;
+			private boolean autoNewPage;
+			private number alignment;
+			private boolean justify;
+			boolean _rotate;
+			number _angle;
+			
+			public static final number ALIGN_LEFT = 0;
+			public static final number ALIGN_RIGHT = 1;
+			public static final number ALIGN_CENTER = 2;
+			
+			public constructor( )
+			{
+				.font = "Sans Regular 12";
+				.color = new Draw.Color( 0, 0, 0 );
+				.autoNewPage = false;
+				.alignment = Pango.ALIGN_LEFT;
+				.justify = false;
+				._rotate = false;
+				._angle = 0;
+			}
+			
+			/**
+			 * @function setText
+			 * @declaration function setText( string text )
+			 * @brief Set the text this item should draw to the document
+			 * @param string text The text
+			 */
+			public function setText( string text )
+				.text = text;
+			
+			function setText( number text )
+				.text = "" + text;
+			
+			/**
+			 * @function setFont
+			 * @declaration function setFont( string font )
+			 * @brief Set the font this text item should use
+			 * @description The font contains three parts. The font
+			 *              family, the font style and the font size.
+			 * @example <nl/><code><type>object</type> text = new Draw.Item.Text( );<nl/>
+			 *          text.setFontDescription( "Sans Regular 12" );</code><nl/>
+			 */
+			public function setFont( string font )
+				.font = font;
+			
+			/**
+			 * @function setColor
+			 * @declaration function setColor( object color )
+			 * @brief Set the text color for this item
+			 * @param object color an instance of Draw.Color object
+			 */
+			public function setColor( object color )
+				.color = color;
+			
+			/**
+			 * @function setAutoNewPage
+			 * @declaration function setAutoNewPage( boolean autoNewPage )
+			 * @brief Set if this item should automaticly create new pages if
+			          the text does not fit on the first page
+			 * @param boolean autoNewPage Auto create new pages or not
+			 * @description If automagic new page creation is off and the text is
+			                to big for the page, the text will be cut.
+			 */
+			public function setAutoNewPage( boolean autoNewPage )
+				.autoNewPage = autoNewPage;
+			
+			/**
+			 * @function setAlignment
+			 * @declaration function setAlignment( number alignment )
+			 * @brief Set the alignment of the text
+			 * @param number alignment Can be any of ALIGN_LEFT, ALIGN_RIGHT or
+			          ALIGN_CENTER.
+			 */
+			public function setAlignment( number alignment )
+			{
+				switch( alignment )
+				{
+					case Draw.Item.Text.ALIGN_CENTER:
+						.alignment = Pango.ALIGN_CENTER;
+						break;
+					case Draw.Item.Text.ALIGN_RIGHT:
+						.alignment = Pango.ALIGN_RIGHT;
+						break;
+					case Draw.Item.Text.ALIGN_LEFT:
+					default:
+						.alignment = Pango.ALIGN_LEFT;
+						break;
+				}
+			}
+			/**
+			 * @function setJustify
+			 * @declaration function setJustify( boolean justify )
+			 * @brief Set if the text should be justified or not
+			 * @param boolean justify True or false
+			 */
+			public function setJustify( boolean justify )
+				.justify = justify;
+			
+			function rotate( number degrees )
+			{
+				._rotate = true;
+				._angle = degrees * ( Math.pi( ) / 180 );
+			}
+			
+			/*
+			function getWidth( object canvas )
+			{
+				number width = 0;
+				object surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, canvas.getWidth( ), canvas.getHeight( ) );
+				object context = new Cairo.Context( surface );
+				object layout = context.createPangoLayout( );
+				object iter;
+				
+				layout.setWidth( canvas.getWidth( ) * Pango.SCALE );
+				layout.setText( .text );
+				layout.setFontDescription( new Pango.FontDescription( .font ) );
+				layout.setAlignment( .alignment );
+				layout.setJustify( .justify );
+				iter = layout.getIter( );
+				
+				do
+				{
+					array lineExtents = iter.getLineExtents( );
+					number lineWidth = lineExtents['logical'].getX( ) / Pango.SCALE;
+					Console.println( lineExtents );
+					if( lineWidth > width )
+						width = lineWidth;
+				}
+				while( iter.nextLine( ) );
+				
+				return width;
+			}
+			*/
+			
+			public function render( object document, object context,
+				object beginPosition, object limitPosition )
+			{
+				object endPosition = new Draw.Position( );
+				object textBeginPosition = new Draw.Position( );
+				object textLimitPosition = new Draw.Position( );
+				object layout = context.createPangoLayout( );
+				number bodyWidth;
+				
+				endPosition.x = beginPosition.x + .marginTop + .marginBottom;
+				endPosition.y = beginPosition.y + .marginLeft + .marginRight;
+				
+				textBeginPosition.x = beginPosition.x + .marginLeft;
+				textBeginPosition.y = beginPosition.y + .marginTop;
+				
+				textLimitPosition.x = limitPosition.x - .marginRight;
+				textLimitPosition.y = limitPosition.y - .marginBottom;
+				
+				bodyWidth = limitPosition.x - beginPosition.x - .marginRight - .marginLeft;
+				
+				layout.setText( .text );
+				layout.setWidth( bodyWidth * Pango.SCALE );
+				layout.setFontDescription( new Pango.FontDescription( .font ) );
+				layout.setAlignment( .alignment );
+				layout.setJustify( .justify );
+				
+				context.setSourceRGB( .color.red, .color.green, .color.blue );
+				
+				endPosition = .renderText( document, context, layout, textBeginPosition,
+					textLimitPosition );
+				
+				return endPosition;
+			}
+			
+			private function renderText( object document, object context, object layout,
+				object beginPosition, object limitPosition )
+			{
+				object endPosition = new Draw.Position( beginPosition.x, beginPosition.y );
+				object iter = layout.getIter( );
+				object line;
+				object lineEndPosition = new Draw.Position( );
+				number prevBaseline = iter.getBaseline( ) / Pango.SCALE;
+				number baseline;
+				array yRange;
+				array lineExtents;
+				
+				context.save( );
+				
+				if( ._rotate )
+				{
+					context.translate( 0, document.getHeight( ) );
+					context.rotate( ._angle );
+					context.updatePangoLayout( layout );
+				}
+				
+				do
+				{
+					line = iter.getLine( );
+					yRange = iter.getLineYRange( );
+					lineExtents = iter.getLineExtents( );
+					
+					lineEndPosition.y = beginPosition.y + ( yRange['end'] / Pango.SCALE );
+					
+					if( limitPosition.y < lineEndPosition.y )
+					{
+						if( not .autoNewPage )
+							break;
+						document.newPage( );
+						beginPosition.y = document.getMarginTop( ) - prevBaseline;
+					}
+					
+					baseline = iter.getBaseline( ) / Pango.SCALE;
+					
+					context.moveTo( ( beginPosition.x + ( lineExtents['logical'].getX( ) / Pango.SCALE ) ),
+						beginPosition.y + baseline );
+					context.showPangoLayoutLine( line );
+					
+					prevBaseline = baseline;
+					
+					lineEndPosition.x = beginPosition.x
+						+ ( lineExtents['logical'].getX( ) / Pango.SCALE )
+						+ .marginRight;
+					
+					if( lineEndPosition.x > endPosition.x )
+						endPosition.x = lineEndPosition.x;
+					
+					endPosition.y = beginPosition.y + baseline + .marginBottom;
+				}
+				while( iter.nextLine( ) );
+				
+				context.restore( );
+				
+				return endPosition;
+			}
+		}
+		/**
+		 * @end
+		 */
+		
+		/**
+		 * @class Image
+		 * @extends Draw.Item.Item
+		 * @brief An item used to draw an image. The image will be resized to
+		          fit the space it has to render itself on.
+		 */
+		class Image extends Draw.Item.Item
+		{
+			private string file;
+			
+			/**
+			 * @function setImage
+			 * @declaration setImage( string image )
+			 * @brief Set the path to the image
+			 * @param string image An image
+			 */
+			public function setFile( string file )
+				.file = file;
+
+			public function render( object document, object context,
+				object beginPosition, object limitPosition )
+			{
+				object endPosition;
+				
+				object image;			
+				object surface;
+				
+				number maxXPos = limitPosition.x - .marginRight;
+				number maxYPos = limitPosition.y - .marginBottom;
+				
+				number beginXPos = beginPosition.x + .marginLeft;
+				number beginYPos = beginPosition.y + .marginTop;
+				
+				number scaleSize = 1.0;
+				
+				number itemEndXPos;
+				number itemEndYPos;
+				
+				if( .file == "" )
+					return beginPosition;
+				
+				if( beginXPos >= maxXPos or beginYPos >= maxYPos )
+					return beginPosition;
+				
+				image = new Image( );
+				image.load( .file );
+				
+				surface = new Cairo.ImageSurface(
+					image.toARGBString( ),
+					Cairo.FORMAT_ARGB32,
+					image.getWidth( ),
+					image.getHeight( ),
+					image.getWidth( ) * 4 );
+				
+				itemEndXPos = beginXPos + image.getWidth() + .marginRight;
+				itemEndYPos = beginYPos + image.getHeight() + .marginBottom;
+				
+				if( itemEndXPos > maxXPos and itemEndYPos > maxYPos )
+				{
+					number widthScaleSize;
+					number heightScaleSize;
+					
+					widthScaleSize = ( maxXPos - beginXPos ) / image.getWidth( );
+					heightScaleSize = ( maxYPos - beginYPos ) / image.getHeight( );
+					
+					if( widthScaleSize < heightScaleSize )
+						scaleSize = widthScaleSize;
+					else
+						scaleSize = heightScaleSize;
+				}
+				else if( itemEndXPos  > maxXPos )
+					scaleSize = ( maxXPos - beginXPos ) / image.getWidth( );
+				else if( itemEndYPos > maxYPos )
+					scaleSize = ( maxYPos - beginYPos ) / image.getHeight( );
+				
+				context.save( );
+				context.scale( scaleSize, scaleSize );
+				context.setSourceSurface( surface, ( beginXPos / scaleSize ),
+					( beginYPos / scaleSize ) );
+				context.paint( );
+				context.restore( );
+				
+				itemEndXPos = beginXPos + ( image.getWidth( ) * scaleSize ) + .marginRight;
+				itemEndYPos = beginYPos + ( image.getHeight( ) * scaleSize ) + .marginBottom;
+				
+				endPosition = new Draw.Position( );
+				endPosition.x = itemEndXPos;
+				endPosition.y = itemEndYPos;
+				
+				return endPosition;
+			}
+		}
+		/**
+		 * @end
+		 */
+		
+		abstract class Chart extends Draw.Item.Item {
+			object canvas;
+			array groups;
+			array x_markers;
+			array values;
+			number highest_value;
+			number x_scale_value;
+			number y_scale_value;
+			number grid_surface_width;
+			number grid_surface_height;
+			number y_marker_surface_right_margin;
+			number x_marker_surface_top_margin;
+			number width;
+			number height;
+			number marker_height;
+			number highest_value_width;
+			number number_of_y_markers;
+			number y_marker_increment;
+			number y_grid_line_increment;
+			number widest_x_marker_width;
+			number y_marker_surface_width;
+			number y_marker_surface_height;
+			number x_marker_surface_width;
+			number x_marker_surface_height;
+			number legend_surface_width;
+			number legend_surface_height;
+			number x_axis_legend_surface_width;
+			number x_axis_legend_surface_height;
+			object y_marker_surface;
+			object y_marker_context;
+			object x_marker_surface;
+			object x_marker_context;
+			object grid_surface;
+			object grid_context;
+			object legend_surface;
+			object legend_context;
+			object x_axis_legend_surface;
+			object x_axis_legend_context;
+			array colours;
+			object grid_dark_background_colour;
+			object grid_light_background_colour;
+			object grid_line_colour;
+			number grid_line_width;
+			object context;
+			object begin_position;
+			object limit_position;
+			boolean width_set;
+			boolean height_set;
+			number marker_font_size;
+			string marker_font_face;
+			number legend_icon_width;
+			number legend_icon_height;
+			number legend_icon_padding;
+			string x_axis_legend;
+			
+			constructor {
+				.width_set = false;
+				.height_set = false;
+				.marker_font_face = 'Sans';
+				.marker_font_size = 10;
+				.y_marker_surface_right_margin = 10;
+				.x_marker_surface_top_margin = 10;
+				.colours = [
+					new Draw.Color( 255, 153, 0 ),
+					new Draw.Color( 0, 102, 153 ),
+					new Draw.Color( 102, 0, 153 ),
+					new Draw.Color( 153, 0, 102 ),
+					new Draw.Color( 164, 164, 75 ),
+					new Draw.Color( 173, 173, 173 ),
+					new Draw.Color( 255, 0, 0 ),
+					new Draw.Color( 0, 255, 0 ),
+					new Draw.Color( 0, 0, 255 ),
+					new Draw.Color( 255, 255, 0 ),
+					new Draw.Color( 255, 0, 255 ),
+					new Draw.Color( 0, 255, 255 )
+				];
+				.grid_dark_background_colour = new Draw.Color( 245, 245, 245 );
+				.grid_light_background_colour = new Draw.Color( 255, 255, 255 );
+				.grid_line_colour = new Draw.Color( 225, 225, 225 );
+				.grid_line_width = 1;
+				.legend_icon_width = 15;
+				.legend_icon_height = 15;
+				.legend_icon_padding = 15;
+			}
+
+			// Calculate the total width
+			function calculate_item_width {
+				number max_width = .limit_position.x - .begin_position.x - .marginLeft - .marginRight;
+				if( ( not .width_set ) or .width > max_width  )
+					.width = max_width;
+			}
+			// Calculate the total height
+			function calculate_item_height {
+				number max_height = .limit_position.y - .begin_position.y - .marginTop - .marginBottom;
+				if( .height_set ) {
+					if( .height > .canvas.getHeight() )
+						.height = .canvas.getHeight() - .canvas.getMarginTop() - .canvas.getMarginBottom() - .marginTop - .marginBottom;
+					if( .height > max_height ) {
+						.canvas.newPage();
+						.begin_position = new Draw.Position( .canvas.getMarginLeft(), .canvas.getMarginTop() );
+						.limit_position = new Draw.Position( .canvas.getWidth() - .canvas.getMarginRight(), .canvas.getHeight() - .canvas.getMarginBottom() );
+					}
+				} else
+					.height = max_height;
+			}
+			// Calculate the width of the highest value and marker height
+			function calculate_highest_value {
+				.highest_value_width = String.width( "${.highest_value}", .marker_font_size );
+				.marker_height = String.height( "${.highest_value}", .marker_font_size );
+			}
+			// Calculate the width and the height of the lagend surface
+			function calculate_legend_surface_size {
+				number widest_group_width = 0;
+				.groups.each() using ( group ) {
+					number group_width = group.width( .marker_font_size );
+					if( group_width > widest_group_width ) {
+						widest_group_width = group_width;
+					}
+				};
+				.legend_surface_width = .legend_icon_padding + .legend_icon_width + .legend_icon_padding + widest_group_width;
+				.legend_surface_height = .height;
+			}
+			// Calculate the width and the height of the y axis surface
+			function calculate_y_marker_surface_size {
+				.y_marker_surface_width = .highest_value_width;
+				.y_marker_surface_height = .height;
+			}
+			function calculate_x_axis_legend_surface_size {
+				.x_axis_legend_surface_width = .width - .y_marker_surface_width - .y_marker_surface_right_margin - .legend_surface_width;
+				.x_axis_legend_surface_height = .marker_height * 2;
+			}
+			// Calculate the width and the height of the x axis surface
+			function calculate_x_marker_surface_size {
+				number max_width = .height * 0.6;
+				array new_x_markers = [];
+				
+				for( number i = 0; i < .x_markers.size(); i++ ) {
+					string m = '' + .x_markers[i];
+					number m_width = m.width( .marker_font_size );
+					if( m_width > max_width ) {
+						// Remove 3 characters for ...
+						m = m.utf8Slice( m.utf8Length() - 4 );
+						m = m.trim( ' ' );
+						m_width = m.width( .marker_font_size );
+						while( m_width > max_width ) {
+							m = m.utf8Slice( m.utf8Length() - 2 );
+							m_width = m.width( .marker_font_size );
+						}
+						m = m.trim( ' ' ) + '...';
+					}
+					new_x_markers[] = m;
+					if( m_width > .widest_x_marker_width ) {
+						.widest_x_marker_width = m_width;
+					}
+				}
+				
+				.x_markers = new_x_markers;
+				.x_marker_surface_width = .widest_x_marker_width;
+					
+				//.x_marker_surface_height = .width - .y_marker_surface_width - .y_marker_surface_right_margin - .legend_surface_width;
+				.x_marker_surface_height = .x_axis_legend_surface_width;
+			}
+			// Calculate the width and the height of the grid surface
+			function calculate_grid_surface_size {
+				.grid_surface_width = .width - .y_marker_surface_width - .y_marker_surface_right_margin - .legend_surface_width;
+				.grid_surface_height = .height - .x_axis_legend_surface_height - .x_marker_surface_width - .x_marker_surface_top_margin - ( .marker_height / 2.0 );
+			}
+			// Calculate how many y markers to show and what the increment between them should be
+			function calculate_y_marker_scales {
+				.number_of_y_markers = .grid_surface_height / ( .marker_height * 4 );
+				.number_of_y_markers = .number_of_y_markers.floor();
+				.number_of_y_markers = .number_of_y_markers.round();
+			
+				if( .highest_value > 0 ) {
+					while( .highest_value % 2 != 0 )
+						.highest_value++;
+				
+					if( .number_of_y_markers > .highest_value )
+						.number_of_y_markers = .highest_value;
+				
+					.y_marker_increment = .highest_value / .number_of_y_markers;
+					.y_marker_increment = .y_marker_increment.ceil();
+					.y_marker_increment = .y_marker_increment.round();
+					
+					if( ( .number_of_y_markers * .y_marker_increment ) < .highest_value )
+						.y_marker_increment++;
+					
+					if( ( ( .number_of_y_markers - 1 ) * .y_marker_increment ) > .highest_value )
+						.number_of_y_markers--;
+				} else {
+					.y_marker_increment = 1;
+					.number_of_y_markers = 2;
+				}
+				
+				.y_scale_value = ( .number_of_y_markers * .y_marker_increment ) / .grid_surface_height;
+				.y_grid_line_increment = ( .y_marker_increment + 0.0 ) / 2;
+			}
+			function create_legend_objects {
+				.legend_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, .legend_surface_width, .legend_surface_height );
+				.legend_context = new Cairo.Context( .legend_surface );
+				.legend_context.setSourceRGB( 1.0, 1.0, 1.0 );
+				.legend_context.paint();
+			}
+			function create_x_axis_legend_objects {
+				.x_axis_legend_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, .x_axis_legend_surface_width, .x_axis_legend_surface_height );
+				.x_axis_legend_context = new Cairo.Context( .x_axis_legend_surface );
+				.x_axis_legend_context.setSourceRGB( 1.0, 1.0, 1.0 );
+				.x_axis_legend_context.paint();
+			}
+			// Create the grid surface and grid context
+			function create_grid_objects {
+				.grid_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, .grid_surface_width, .grid_surface_height );
+				.grid_context = new Cairo.Context( .grid_surface );
+				// Paint the grid surface with white background
+				.grid_context.setSourceRGB( 1.0, 1.0, 1.0 );
+				.grid_context.paint();
+			}
+			// Create the y axis marker surface and the y axis marker context
+			function create_y_marker_objects {
+				.y_marker_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, .y_marker_surface_width, .y_marker_surface_height );
+				.y_marker_context = new Cairo.Context( .y_marker_surface );
+				// Paint the surface with white background
+				.y_marker_context.setSourceRGB( 1.0, 1.0, 1.0 );
+				.y_marker_context.paint();
+			}
+			// Create the x marker surface and the x marker context
+			function create_x_marker_objects {
+				.x_marker_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, .x_marker_surface_width, .x_marker_surface_height );
+				.x_marker_context = new Cairo.Context( .x_marker_surface );
+				// Paint the surface with white background
+				.x_marker_context.setSourceRGB( 1.0, 1.0, 1.0 );
+				.x_marker_context.paint();
+			}
+			function draw_legend_surface {
+				// create a little surface which is the height of what the icons will use
+				number numberOfGroups = .groups.size();
+				number little_surface_width = .legend_surface_width;
+				number little_surface_height = ( numberOfGroups * ( .legend_icon_height + .legend_icon_padding ) ) + .legend_icon_padding;
+				object little_surface = new Cairo.ImageSurface( Cairo.FORMAT_RGB24, little_surface_width, little_surface_height );
+				object little_context = new Cairo.Context( little_surface );
+				little_context.setSourceRGB( 1.0, 1.0, 1.0 );
+				little_context.paint();
+				.groups.eachWithIndex() using ( group, index ) {
+					number text_x;
+					number text_y;
+					number icon_x;
+					number icon_y;
+					object colour;
+					// text
+					text_x = .legend_icon_padding + .legend_icon_width + .legend_icon_padding;
+					text_y = ( index * .legend_icon_height ) + .legend_icon_padding + .marker_height + ( ( .legend_icon_height - .marker_height ) / 2 );
+					little_context.setSourceRGB( 0.0, 0.0, 0.0 );
+					little_context.moveTo( text_x, text_y );
+					little_context.showText( group );
+					// icon
+					icon_x = .legend_icon_padding;
+					icon_y = ( index * .legend_icon_height ) + .legend_icon_padding;
+					colour = .colours[index];
+					little_context.setSourceRGB( colour.red, colour.green, colour.blue );
+					little_context.rectangle( icon_x, icon_y, .legend_icon_width, .legend_icon_height );
+					little_context.fill();
+				};
+				// Paint little surface to legend surface
+				.legend_context.setSourceSurface( little_surface, 0, ( .grid_surface_height / 2 ) - ( little_surface_height / 2 ) );
+				.legend_context.paint();
+			}
+			function draw_x_axis_legend_surface {
+				number w = .x_axis_legend.width( .marker_font_size );
+				number x = ( .grid_surface_width / 2 ) - ( w / 2 );
+				number y = .x_axis_legend_surface_height - ( .marker_height / 2 );
+				.x_axis_legend_context.setSourceRGB( 0.0, 0.0, 0.0 );
+				.x_axis_legend_context.moveTo( x, y );
+				.x_axis_legend_context.showText( .x_axis_legend );
+			}
+			// Draw the y axis marker surface
+			function draw_y_marker_surface {
+				.y_marker_context.selectFontFace( .marker_font_face, Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+				.y_marker_context.setFontSize( .marker_font_size );
+				.y_marker_context.setSourceRGB( 0.0, 0.0, 0.0 );
+				for( number i = 0; i < .number_of_y_markers + 1; i++ ) {
+					number marker = .y_marker_increment * i;
+					number x;
+					number y;
+					// Align to the right
+					x = .y_marker_surface_width - String.width( "${marker}", .marker_font_size );
+					y = .y( .y_marker_increment * i ) + ( .marker_height * 1.1 );
+					.y_marker_context.moveTo( x, y );
+					.y_marker_context.showText( '' + marker );
+				}
+			}
+			// Draw horizontal grid lines to grid surface
+			function draw_horizontal_grid_lines_to_grid_surface {
+				number number_of_horizontal_grid_lines = ( .number_of_y_markers * 2 ) + 1;
+				// Draw background colours
+				.grid_context.setLineWidth( 1 );
+				for( number i = 0; i < number_of_horizontal_grid_lines; i++ ) {
+					number x = 0;
+					number y = .y( .y_grid_line_increment * ( i + 1 ) );
+					number w = .grid_surface_width;
+					number h = .y( .y_grid_line_increment * i ) - .y( .y_grid_line_increment * ( i - 1 ) );
+					object c = ( i % 2 == 0 ? .grid_dark_background_colour : .grid_light_background_colour );
+					.grid_context.setSourceRGB( c.red, c.green, c.blue );
+					.grid_context.rectangle( x, y, w, h );
+					.grid_context.fill();
+				}
+				// Draw the horizontal grid lines
+				.grid_context.setLineWidth( .grid_line_width );
+				.grid_context.setSourceRGB( .grid_line_colour.red, .grid_line_colour.green, .grid_line_colour.blue );
+				for( number i = 0; i < number_of_horizontal_grid_lines; i++ ) {
+					.grid_context.moveTo( 0, .y( .y_grid_line_increment * i ) );
+					.grid_context.lineTo( .grid_surface_width, .y( .y_grid_line_increment * i ) );
+					.grid_context.stroke();
+				}
+			}
+			// Draw the y axis line and the x axis line to the grid surface
+			function draw_axis_lines_to_grid_surface {
+				.grid_context.setSourceRGB( 0.0, 0.0, 0.0 );
+				.grid_context.setLineWidth( 2 );
+				// Draw the y axis line
+				.grid_context.moveTo( 0, 0 );
+				.grid_context.lineTo( 0, .grid_surface_height );
+				.grid_context.stroke();
+				// Draw the x axis line
+				.grid_context.moveTo( 0, .grid_surface_height - 1 );
+				.grid_context.lineTo( .grid_surface_width, .grid_surface_height - 1 );
+				.grid_context.stroke();
+
+			}
+			// Paint the legend surface to the main canvas surface
+			function paint_legend_surface_to_main_surface {
+				number x = .begin_position.x + .y_marker_surface_width + .y_marker_surface_right_margin + .grid_surface_width;
+				number y = .begin_position.y;
+				.context.setSourceSurface( .legend_surface, x, y  );
+				.context.paint();
+			}
+			function paint_x_axis_legend_surface_to_main_surface {
+				number x = .begin_position.x + .y_marker_surface_width + .y_marker_surface_right_margin;
+				number y = .begin_position.y + .height - .x_axis_legend_surface_height;
+				.context.setSourceSurface( .x_axis_legend_surface, x, y );
+				.context.paint();
+			}
+			// Paint the x marker surface to the main canvas surface
+			function paint_x_marker_surface_to_main_surface {
+				// rotation means x and y are switched
+				number x = - ( .begin_position.y + .height - .x_axis_legend_surface_height );
+				number y = .begin_position.x + .y_marker_surface_width + .y_marker_surface_right_margin;
+				.context.save();
+				.context.rotate( -90.0 * ( Math.pi() / 180.0 ) );
+				.context.setSourceSurface( .x_marker_surface, x, y );
+				.context.paint();
+				.context.restore();
+			}
+			// Paint the y marker surface to the main canvas surface
+			function paint_y_marker_surface_to_main_surface {
+				.context.setSourceSurface( .y_marker_surface, .begin_position.x, .begin_position.y );
+				.context.paint();
+			}
+			// Paint the grid surface to the main canvas surface
+			function paint_grid_surface_to_main_surface {
+				number x = .begin_position.x + .y_marker_surface_width + .y_marker_surface_right_margin;
+				number y = .begin_position.y + ( .marker_height / 2.0 );
+				.context.setSourceSurface( .grid_surface, x, y );
+				.context.paint();
+			}
+			
+			function setData( array data ) {
+				if( data.keyExists( 'ColumnHeaders' ) and data['ColumnHeaders'].size() > 1 ) {
+					.x_axis_legend = data['ColumnHeaders'][0];
+					.groups = data['ColumnHeaders'][1..];
+				}
+				if( data.keyExists( 'Rows' ) ) {
+					for( number i = 0; i < data['Rows'].size(); i++ ) {
+						array row = data['Rows'][i];
+						array real_row = [];
+						.x_markers[] = row[0];
+						for( number j = 1; j < data['ColumnHeaders'].size(); j++ ) {
+							number value = row[j];
+							if( value > .highest_value )
+								.highest_value = value;
+							real_row[] = value;
+						}
+						.values[] = real_row;
+					}
+				}
+				.highest_value = .highest_value.round();
+			}
+			
+			function setWidth( number width ) {
+				.width = width;
+				.width_set = true;
+			}
+			
+			function setHeight( number height ) {
+				.height = height;
+				.height_set = true;
+			}
+			
+			function x( number x )
+				return x / .x_scale_value;
+			
+			function y( number y )
+				return .grid_surface_height - ( y / .y_scale_value );
+			
+			function pre_surface_render( object canvas, object context, object begin_position, object limit_position ) {
+				.canvas = canvas;
+				.context = context;
+				.begin_position = begin_position;
+				.limit_position = limit_position;
+				.calculate_item_width();
+				.calculate_item_height();
+				.calculate_highest_value();
+				.calculate_legend_surface_size();
+				.calculate_y_marker_surface_size();
+				.calculate_x_axis_legend_surface_size();
+				.calculate_x_marker_surface_size();
+				.calculate_grid_surface_size();
+				.calculate_y_marker_scales();
+				.create_legend_objects();
+				.create_x_axis_legend_objects();
+				.create_y_marker_objects();
+				.create_x_marker_objects();
+				.create_grid_objects();
+			}
+			
+			function post_surface_render {
+				.draw_axis_lines_to_grid_surface();
+				.draw_legend_surface();
+				.draw_x_axis_legend_surface();
+				.paint_legend_surface_to_main_surface();
+				.paint_x_marker_surface_to_main_surface();
+				.paint_y_marker_surface_to_main_surface();
+				.paint_grid_surface_to_main_surface();
+				.paint_x_axis_legend_surface_to_main_surface();
+			}
+		}
+		
+		class BarsChart extends Draw.Item.Chart {
+			// Draw the x marker surface
+			function draw_x_marker_surface {
+				number number_of_bars_in_group = .values[0].size();
+				number bar_width = .x( 2 ) - .x( 1 );
+				.x_marker_context.selectFontFace( .marker_font_face, Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+				.x_marker_context.setFontSize( .marker_font_size );
+				.x_marker_context.setSourceRGB( 0.0, 0.0, 0.0 );
+				.x_markers.eachWithIndex() using ( marker, index ) {
+					number x;
+					number y;
+					number m_width = marker.width( .marker_font_size );
+					// Align the marker to the right
+					x = .x_marker_surface_width - m_width;
+					y = .x( index + 1 + ( index * number_of_bars_in_group ) ) - 2 + ( bar_width / 2.0 ) + ( .marker_height / 2.0 );
+					// + ( ( .values[0].size() + 0.0 ) / 2.0 ) );// + .marker_height;
+					.x_marker_context.moveTo( x, y );
+					.x_marker_context.showText( marker );
+				};
+			}
+			// Draw vertical grid lines to grid surface
+			function draw_vertical_grid_lines_to_grid_surface {
+				number vertical_grid_lines = ( .x_markers.size() * .values[0].size() ) + .x_markers.size() + 1;
+				.grid_context.setSourceRGB( .grid_line_colour.red, .grid_line_colour.green, .grid_line_colour.blue );
+				.grid_context.setLineWidth( .grid_line_width );
+				for( number i = 1; i <= vertical_grid_lines; i++ ) {
+					// It looks better with -2 pixels.
+					.grid_context.moveTo( .x( i ) - 2, 0 );
+					.grid_context.lineTo( .x( i ) - 2, .grid_surface_height );
+					.grid_context.stroke();
+				}
+			}
+			// Draw the bars to the grid surface
+			function draw_bars_to_grid_surface {
+				number vertical_grid_lines = ( .x_markers.size() * .values[0].size() ) + .x_markers.size() + 1;
+				number values_size = .values.size();
+				.grid_context.setLineWidth( 0.5 );
+				for( number group_index = 0; group_index < values_size; group_index++ ) {
+					array row = .values[group_index];
+					for( number value_index = 0; value_index < row.size(); value_index++ ) {
+						number value = row[value_index];
+						number x = .x( group_index + 1 + ( group_index * .values[0].size() ) + value_index ) - 2;
+						number y = .y( value );
+						number w = .grid_surface_width / vertical_grid_lines;
+						number h = .grid_surface_height - .y( value );
+						.grid_context.setSourceRGB( .colours[value_index].red, .colours[value_index].green, .colours[value_index].blue );
+						.grid_context.rectangle( x, y, w, h );
+						.grid_context.fill();
+						// Draw a black border around the bar
+						.grid_context.setSourceRGB( 0.0, 0.0, 0.0 );
+						.grid_context.rectangle( x, y, w, h );
+						.grid_context.stroke();
+					}
+				}
+			}
+			function render( object canvas, object context, object begin_position, object limit_position ) {
+				.pre_surface_render( canvas, context, begin_position, limit_position );
+				
+				if( .values.size() == 0 ) {
+					return new Draw.Position( begin_position.x, begin_position.y );
+				}
+				{
+					number x_markers_width = .x_markers.size() * ( .marker_height + ( .marker_height / 2 ) );
+					if( ( x_markers_width ) > .grid_surface_width ) {
+						return new Draw.Position( begin_position.x, begin_position.y );						
+					}
+				}
+
+				{
+					number number_of_groups = .x_markers.size() + 0.0;
+					number number_of_bars_in_group = .values[0].size() + 0.0;
+					.x_scale_value = ( ( number_of_groups * number_of_bars_in_group + 1 ) + number_of_groups ) / .grid_surface_width;
+				}
+				
+				.draw_y_marker_surface();
+				.draw_x_marker_surface();
+				.draw_horizontal_grid_lines_to_grid_surface();
+
+				.draw_vertical_grid_lines_to_grid_surface();
+				.draw_bars_to_grid_surface();
+
+				.post_surface_render();
+
+				return new Draw.Position( .begin_position.x + .marginLeft + .width + .marginRight, .begin_position.y + .marginTop + .height + .marginBottom );
+			}
+		}
+		
+		class LinesChart extends Draw.Item.Chart {
+			function draw_x_marker_surface {
+				.x_marker_context.selectFontFace( .marker_font_face, Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL );
+				.x_marker_context.setFontSize( .marker_font_size );
+				.x_marker_context.setSourceRGB( 0.0, 0.0, 0.0 );
+				.x_markers.eachWithIndex() using ( marker, index ) {
+					number x = .x_marker_surface_width - marker.width( .marker_font_size );
+					number y = .x( index + 1 );
+					.x_marker_context.moveTo( x, y );
+					.x_marker_context.showText( '' + marker );
+				};
+			}
+			function draw_vertical_grid_lines_to_grid_surface {
+				number number_of_x_markers = .x_markers.size();
+				number vertical_grid_lines = number_of_x_markers + 1;
+				.grid_context.setSourceRGB( .grid_line_colour.red, .grid_line_colour.green, .grid_line_colour.blue );
+				.grid_context.setLineWidth( .grid_line_width );
+				for( number i = 1; i <= vertical_grid_lines; i++ ) {
+					// It looks better with -2 pixels
+					.grid_context.moveTo( .x( i ) -2, 0 );
+					.grid_context.lineTo( .x( i ) -2, .grid_surface_height );
+					.grid_context.stroke();
+				}
+			}
+			function draw_lines_to_grid_surface {
+				number number_of_groups = .values.size();
+				number last_group_index = number_of_groups - 1;
+				.grid_context.setLineWidth( 2 );
+				for( number group_index = 0; group_index < .values.size(); group_index++ ) {
+					if( group_index < last_group_index ) {
+						array group = .values[group_index];
+						number next_group_index = group_index + 1;
+						for( number value_index = 0; value_index < group.size(); value_index++ ) {
+							number value = group[value_index];
+							number next_value = .values[next_group_index][value_index];
+							number start_x = .x( group_index + 1 ) - 2; // +1 because we don't want to draw directly on the y axis
+							number start_y = .y( value );
+							number end_x = .x( group_index + 2 ) - 2;
+							number end_y = .y( next_value );
+							object c = .colours[value_index];
+							.grid_context.setSourceRGB( c.red, c.green, c.blue );
+							.grid_context.moveTo( start_x, start_y );
+							.grid_context.lineTo( end_x, end_y );
+							.grid_context.stroke();
+						}
+					}
+				};
+			}
+			function render( object canvas, object context, object begin_position, object limit_position ) {
+				.pre_surface_render( canvas, context, begin_position, limit_position );
+
+				if( .values.size() < 2 ) {
+					return new Draw.Position( begin_position.x, begin_position.y );
+				}
+				{
+					number x_markers_width = .x_markers.size() * ( .marker_height + ( .marker_height / 2 ) );
+					if( ( x_markers_width ) > .grid_surface_width ) {
+						return new Draw.Position( begin_position.x, begin_position.y );					
+					}
+				}
+
+				{
+					number number_of_x_markers = .x_markers.size();
+					.x_scale_value = ( number_of_x_markers + 1 ) / .grid_surface_width;
+				}
+				
+				.draw_y_marker_surface();
+				.draw_x_marker_surface();
+				
+				.draw_horizontal_grid_lines_to_grid_surface();
+				.draw_vertical_grid_lines_to_grid_surface();
+				.draw_lines_to_grid_surface();
+				
+				.post_surface_render();
+				
+				return new Draw.Position( .begin_position.x + .marginLeft + .width + .marginRight, .begin_position.y + .marginTop + .height + .marginBottom );
+			}
+		}
+		
+		/**
+		 * @class Container
+		 * @extends Draw.Item.Item
+		 * @brief An item that hold other items
+		 */
+		class Container extends Draw.Item.Item
+		{
+			array items;
+			array columnBackgroundColors;
+			number columns;
+			number borderWidth;
+			object borderColor;
+			
+			constructor {
+				.items = [ ];
+				.columns = 1;
+				.columnBackgroundColors = [ ];
+				.borderWidth = 1;
+				.borderColor = new Draw.Color( 0, 0, 0 );
+			}
+			
+			/**
+			 * @function renderItem
+			 * @declaration function renderItem( object item )
+			 * @brief Add an item to the container
+			 * @param object item the item to add
+			 */
+			function renderItem( object item )
+				.items[ ] = item;
+			
+			/**
+			 * @function setColumns
+			 * @declaration	function setColumns( number columns )
+			 * @brief Set the number of columns this container have
+			 * @param number columns the number of columns
+			 */
+			function setColumns( number columns )
+				.columns = columns;
+			
+			/**
+			 * @function setColumnBackgroundColors
+			 * @declaration function setColumnBackgroundColors( array backgroundColors )
+			 * @brief Set the background colors for the columns
+			 * @param array backgroundColors an array of colors in hexadecimal values
+			 */
+			function setColumnBackgroundColors( array backgroundColors ) {
+				backgroundColors.eachWithIndex( ) using ( value, index ) {
+					number columnNumber = index + 1;
+					.columnBackgroundColors[ "${columnNumber}" ] = value;
+				};
+			}
+			/**
+			 * @function setBorderWidth
+			 * @declaration function setBorderWidth( number borderWidth )
+			 * @brief Set the width of the border around the columns
+			 * @param number borderWidth the width of the border
+			 */
+			function setBorderWidth( number borderWidth )
+				.borderWidth = borderWidth;
+			
+			/**
+			 * @function setBorderColor
+			 * @declaration function setBorderColor( object color )
+			 * @brief Set the color of the border
+			 * @param object color an instance of Draw.Color object
+			 */
+			function setBorderColor( object color )
+				.borderColor = color;
+			
+			function render( object document, object context, object beginPosition, object limitPosition ) {
+				object endPosition = new Draw.Position( beginPosition.x, beginPosition.y );
+				object surroundingRectangle = new Draw.Item.Shape.Rectangle();
+				object latestItemEndPosition = new Draw.Position();
+				object itemBeginPosition = new Draw.Position();
+				object itemLimitPosition = new Draw.Position();
+				object imageSurface;
+				object imageContext;
+				number itemsSize = .items.size();
+				number totalWidth;
+				number itemWidth;
+				number columnNum = 1;
+				number columnYPos;
+				array columnBeginPositions = [];
+				array columnItems = [];
+				array itemLimitPositions = [];
+				boolean createNewPage = false;
+				
+				if( itemsSize == 0 )
+					return beginPosition;
+				
+				imageSurface = new Cairo.ImageSurface( Cairo.FORMAT_ARGB32, document.getWidth(), document.getHeight() );
+				imageContext = new Cairo.Context( imageSurface );
+				
+				totalWidth = ( limitPosition.x - .marginRight ) - ( beginPosition.x + .marginLeft );
+				itemWidth = totalWidth / .columns;
+				
+				latestItemEndPosition.y = beginPosition.y + .marginTop;
+				columnYPos = latestItemEndPosition.y;
+				itemLimitPosition.y = limitPosition.y - .marginBottom;
+				
+				.items.eachWithIndex( ) using ( item, itemsIndex ) {
+					if( columnNum > .columns ) {
+						createNewPage = false;
+						columnNum = 1;
+						itemBeginPosition.x = beginPosition.x + .marginLeft;
+						columnYPos = endPosition.y;
+						columnBeginPositions = [];
+						columnItems = [];
+						itemLimitPositions = [];
+					} else
+						itemBeginPosition.x = ( beginPosition.x + .marginLeft ) + ( itemWidth * ( columnNum - 1 ) );
+					
+					itemBeginPosition.y = columnYPos;
+					itemLimitPosition.x = ( beginPosition.x + .marginLeft ) + ( itemWidth * columnNum );
+					
+					latestItemEndPosition = item.render( document,
+					                                     imageContext,
+					                                     itemBeginPosition,
+					                                     new Draw.Position( itemLimitPosition.x, itemLimitPosition.y + document.getHeight() ) );
+					
+					endPosition.x = latestItemEndPosition.x;
+					
+					if( latestItemEndPosition.y > itemLimitPosition.y ) {
+						// New page should be created before drawing the row this item is part of
+						// First correct the all the already tested colymns in this row positions to the top of the new page
+						array newColumnBeginPositions = [];
+						columnBeginPositions.each() using ( position ) {
+							newColumnBeginPositions[] = new Draw.Position( position.x, document.getMarginTop() );
+						};
+						columnBeginPositions = newColumnBeginPositions;
+						// Set the current item's position to the top of the new page
+						itemBeginPosition.y = document.getMarginTop();
+						// Redraw the item to get its end position
+						latestItemEndPosition = item.render( document, imageContext, itemBeginPosition, itemLimitPosition );
+						// Set the end position of the rows to be the end position of this item
+						endPosition.y = latestItemEndPosition.y;
+						// Tell us that we should create a new page later
+						createNewPage = true;
+					} else if( latestItemEndPosition.y > endPosition.y )
+						endPosition.y = latestItemEndPosition.y;
+					
+					columnBeginPositions[] = new Draw.Position( itemBeginPosition.x, itemBeginPosition.y );
+					itemLimitPositions[] = new Draw.Position( itemLimitPosition.x, itemLimitPosition.y );
+					columnItems[] = item;
+					
+					// If this is the last column in the row the borders are
+					// drawn around the columns, the background color and then
+					// the item itself.
+					if( columnNum == .columns or itemsIndex == ( itemsSize - 1 ) ) {
+						if( createNewPage )
+							document.newPage();
+						columnBeginPositions.eachWithIndex( ) using ( columnBeginPosition, index ) {
+							object item = columnItems[ index ];
+							object currentItemLimitPosition = itemLimitPositions[ index ];
+							object backgroundRectangle = new Draw.Item.Shape.Rectangle( );
+							object borderRectangle = new Draw.Item.Shape.Rectangle( );
+							number height = endPosition.y - columnBeginPosition.y;
+							number num = index + 1;
+															
+							borderRectangle.setColor( .borderColor );
+							borderRectangle.setLineWidth( .borderWidth );
+							borderRectangle.setWidth( itemWidth );
+							borderRectangle.setHeight( height );
+							borderRectangle.setBeginPosition( columnBeginPosition );
+							borderRectangle.render( document, context, limitPosition );
+							
+							if( .columnBackgroundColors.keyExists( "${num}" ) ) {
+								object bgColor = .columnBackgroundColors[ "${num}" ];
+								backgroundRectangle.setFilled( true );
+								backgroundRectangle.setWidth( itemWidth );
+								backgroundRectangle.setHeight( height );
+								backgroundRectangle.setBeginPosition( columnBeginPosition );
+								backgroundRectangle.setColor( bgColor );	
+								backgroundRectangle.render( document, context, limitPosition );
+							}
+							
+							item.render( document, context, columnBeginPosition, currentItemLimitPosition );
+						};
+					}
+					
+					columnNum++;
+				};
+				
+				// Draw a surrounding rectangle to make the border a little less ugly
+				surroundingRectangle.setLineWidth( .borderWidth );
+				surroundingRectangle.setColor( .borderColor );
+				surroundingRectangle.render( document,
+				                             context,
+				                             new Draw.Position( beginPosition.x + .marginLeft, beginPosition.y + .marginTop ),
+				                             new Draw.Position( limitPosition.x - .marginRight, endPosition.y ) );
+				
+				endPosition.y = endPosition.y + .marginBottom;
+				
+				return endPosition;
+			}
+		}
+		/**
+		 * @end
+		 */
+		
+		/**
+		 * @namespace Shape
+		 * @brief Contains shapes like lines, rectangles and circles
+		 */
+		namespace Shape
+		{
+			/**
+			 * @class Shape
+			 * @extends Draw.Item.Item
+			 * @brief An item describing the basics of a shape
+			 */
+			abstract class Shape extends Draw.Item.Item
+			{
+				protected object color;
+				protected number lineWidth;
+				
+				/**
+				 * @function setColor
+				 * @declaration function setColor( object color )
+				 * @brief Set the color for the shape
+				 * @param object color an instance of a Draw.Color object
+				 */
+				public function setColor( object color )
+					.color = color;
+				
+				/**
+				 * @function setLineWidth
+				 * @declaration function setLineWidth( number lineWidth )
+				 * @brief Set the line width of the shape
+				 * @param number lineWidth the width of the shape's lines
+				 */
+				public function setLineWidth( number lineWidth )
+					.lineWidth = lineWidth;
+			}
+			/**
+			 * @end
+			 */
+			
+			/**
+			 * @class Line
+			 * @extends Draw.Item.Shape.Shape
+			 * @brief A line
+			 */
+			class Line extends Draw.Item.Shape.Shape
+			{
+				private object endPosition;
+				
+				public function constructor( )
+				{
+					.beginPosition = null;
+					.endPosition = null;
+					.color = new Draw.Color( 0, 0, 0 );
+					.lineWidth = 1;
+				}
+				
+				/**
+				 * @function setEndPosition
+				 * @declaration function setEndPosition( object position )
+				 * @brief Set the position the line should end on
+				 * @param object position the end position for the line
+				 */
+				public function setEndPosition( object position )
+					.endPosition = position;
+				
+				public function render( object document, object context, object limitPosition )
+				{
+					object beginPosition = new Draw.Position( 0, 0 );
+					object endPosition = new Draw.Position( limitPosition.x, limitPosition.y );
+					
+					if( .beginPosition )
+						beginPosition = .beginPosition;
+					
+					if ( .endPosition )
+						endPosition = .endPosition;
+					
+					return .render( document, context, beginPosition, endPosition );
+				}
+				
+				public function render( object document, object context, object beginPosition, object limitPosition )
+				{
+					object endPosition;
+					
+					context.setSourceRGB( .color.red, .color.green, .color.blue );
+					context.setLineWidth( .lineWidth );
+					context.moveTo( beginPosition.x + .marginLeft, beginPosition.y + .marginTop );
+					context.lineTo( limitPosition.x - .marginRight, limitPosition.y + .marginTop );
+					context.stroke( );
+					
+					endPosition = new Draw.Position( );
+					endPosition.x = limitPosition.x;
+					endPosition.y = beginPosition.y + .marginBottom + .lineWidth;
+					
+					return endPosition;
+				}
+			}
+			/**
+			 * @end
+			 */
+			
+			/**
+			 * @class Rectangle
+			 * @extends Draw.Item.Shape.Shape
+			 * @brief A rectangle
+			 */
+			class Rectangle extends Draw.Item.Shape.Shape
+			{
+				protected number width;
+				protected number height;
+				protected boolean filled;
+				
+				public function constructor( )
+				{
+					.beginPosition = null;
+					.color = new Draw.Color( 0, 0, 0 );
+					.lineWidth = 1;
+					.width = -1;
+					.height = -1;
+					.filled = false;
+				}
+				
+				/**
+				 * @function setWidth
+				 * @declaration setWidth( number width )
+				 * @brief Set the width of the rectangle
+				 * @param number width the width of the rectangle
+				 */
+				public function setWidth( number width )
+					.width = width;
+				
+				/**
+				 * @function setHeight
+				 * @declaration function setHeight( number height )
+				 * @brief Set the height of the rectangle
+				 * @param object height the height of the rectangle
+				 */
+				public function setHeight( number height )
+					.height = height;
+				
+				/**
+				 * @function setFilled
+				 * @declaration function setFilled( boolean filled )
+				 * @brief Set if the rectangles should be filled or not
+				 * @param boolean filled true or false
+				 */
+				public function setFilled( boolean filled )
+					.filled = filled;
+				
+				public function render( object document, object context,
+					object beginPosition, object limitPosition )
+				{
+					number x;
+					number y;
+					number width;
+					number height;
+					object endPosition;
+					
+					x = beginPosition.x + .marginLeft;
+					y = beginPosition.y + .marginTop;
+					
+					if( .width != -1 )
+						width = .width;
+					else
+						width = ( limitPosition.x - .marginRight ) - beginPosition.x;
+					
+					if( .height != -1 )
+						height = .height;
+					else
+						height = ( limitPosition.y - .marginBottom ) - beginPosition.y;
+					
+					if( width == 0 and height == 0)
+						return beginPosition;
+					
+					context.setSourceRGB( .color.red, .color.green, .color.blue );
+					context.setLineWidth( .lineWidth );
+					
+					context.rectangle( x, y, width, height);
+					
+					if( .filled )
+						context.fill( );
+					else
+						context.stroke( );
+					
+					endPosition = new Draw.Position( );
+					endPosition.x = beginPosition.x + .marginLeft + width + .marginRight;
+					endPosition.y = beginPosition.y + .marginTop + height + .marginBottom;
+					
+					return endPosition;
+				}
+			}
+			/**
+			 * @end
+			 */
+			
+			/**
+			 * @class RectangleContainer
+			 * @extends Draw.Item.Container
+			 * @brief A rectangle that can contain other items
+			 */
+			class RectangleContainer extends Draw.Item.Container
+			{
+				private object rectangle;
+				private number width;
+				private number height;
+				
+				public function constructor( )
+				{
+					super( );
+					.borderWidth = 0;
+					.rectangle = new Draw.Item.Shape.Rectangle( );
+					.width = -1;
+					.height = -1;
+				}
+				
+				public function setBorderWidth( number borderWidth )
+					.rectangle.setLineWidth( borderWidth );
+				
+				/**
+				 * @function setLineWidth
+				 * @declaration function setLineWidth( number lineWidth )
+				 * @brief Set the line width for the rectangle
+				 * @param number lineWidth the width of the line
+				 */
+				public function setLineWidth( number lineWidth )
+					.rectangle.setLineWidth( lineWidth );
+				
+				/**
+				 * @function setColor
+				 * @declaration function setColor( object color )
+				 * @brief Set the color for the rectangle
+				 * @param object color an instance of a Draw.Color object
+				 */
+				public function setColor( object color )
+					.rectangle.setColor( color );
+				
+				/**
+				 * @function setFilled
+				 * @declaration function setFilled( boolean filled )
+				 * @brief Set if the rectangles should be filled or not
+				 * @param boolean filled true or false
+				 */
+				public function setFilled( boolean filled )
+					.rectangle.setFilled( filled );
+				
+				/**
+				 * @function setWidth
+				 * @declaration setWidth( number width )
+				 * @brief Set the width of the rectangle
+				 * @param number width the width of the rectangle
+				 */
+				public function setWidth( number width )
+					.width = width;
+				
+				/**
+				 * @function setHeight
+				 * @declaration function setHeight( number height )
+				 * @brief Set the height of the rectangle
+				 * @param object height the height of the rectangle
+				 */
+				public function setHeight( number height )
+					.height = height;
+				
+				public function render( object document, object context,
+					object beginPosition, object limitPosition )
+				{
+					number width;
+					number height;
+					object itemLimitPosition;
+					object lastItemEndPosition;
+					object endPosition;
+					
+					itemLimitPosition = new Draw.Position( );
+					itemLimitPosition.x = limitPosition.x; // - .marginRight;
+					itemLimitPosition.y = limitPosition.y; // - .marginBottom;
+					
+					if( .width != -1 )
+						itemLimitPosition.x = beginPosition.x + .marginLeft
+							+ .width + .marginRight;
+					
+					if( .height != -1 )
+						itemLimitPosition.y = beginPosition.y + .marginTop
+							+ .height + .marginBottom;
+					
+					lastItemEndPosition = super.render( document, context,
+						beginPosition, itemLimitPosition );
+					
+					if( .width == -1 )
+						width = limitPosition.x - beginPosition.x
+							- .marginLeft - .marginRight;
+					else
+						width = .width;
+					
+					if( .height == -1 )
+						height = ( lastItemEndPosition.y - .marginBottom )
+							- ( beginPosition.y + .marginTop );
+					else
+						height = .height;
+					
+					.rectangle.setWidth( width );
+					.rectangle.setHeight( height );
+					
+					.rectangle.setMarginTop( .marginTop );
+					.rectangle.setMarginBottom( .marginBottom );
+					.rectangle.setMarginLeft( .marginLeft );
+					.rectangle.setMarginRight( .marginRight );
+					
+					endPosition = .rectangle.render( document, context,
+						beginPosition, limitPosition );
+					
+					return endPosition;
+				}
+			}
+			/**
+			 * @end
+			 */
+			
+			/**
+			 * @class Circle
+			 * @extends Draw.Item.Shape.Shape
+			 * @brief A circle
+			 */
+			class Circle extends Draw.Item.Shape.Shape
+			{
+				private object centerPosition;
+				private number radius;
+				private boolean filled;
+				
+				/**
+				 * @function constructor
+				 * @declaration function constructor( number radius )
+				 * @brief Create a new circle with the specified radius
+				 * @param number radius the radius
+				 */
+				public function constructor( number radius )
+					.radius = radius;
+				
+				public function setBeginPosition( object position )
+				{
+					.beginPosition = position;
+					if( not .centerPosition )
+						.centerPosition = new Draw.Position( );
+					.centerPosition.x = .beginPosition.x + .radius;
+					.centerPosition.y = .beginPosition.y + .radius;
+				}
+				
+				/**
+				 * @function setCenterPosition
+				 * @declaration functions setCenterPosition( object position )
+				 * @brief Set the center position for the circle
+				 * @param object position the center position
+				 */
+				public function setCenterPosition( object position )
+				{
+					.centerPosition = position;
+					if( not .beginPosition )
+						.beginPosition = new Draw.Position( );
+					.beginPosition.x = .centerPosition.x - .radius;
+					.beginPosition.y = .centerPosition.y - .radius;
+				}
+				
+				/**
+				 * @function setFilled
+				 * @declaration function setFilled( boolean filled )
+				 * @brief Set if the rectangles should be filled or not
+				 * @param boolean filled true or false
+				 */
+				public function setFilled( boolean filled )
+					.filled = filled;
+				
+				public function setRadius( number radius )
+					.radius = radius;
+				
+				public function render( object document, object context,
+					object beginPosition, object limitPosition )
+				{
+					object endPosition;
+					
+					beginPosition.x = beginPosition.x + .marginLeft;
+					beginPosition.y = beginPosition.y + .marginTop;
+					
+					.setBeginPosition( beginPosition );
+
+					context.setSourceRGB( .color.red, .color.green, .color.blue );
+					context.setLineWidth( .lineWidth );
+					
+					context.arc( .centerPosition.x, .centerPosition.y,
+						.radius, 0, 360 * ( Math.pi( ) / 180 ) );
+					
+					if( .filled )
+						context.fill( );
+					else
+						context.stroke( );
+
+					endPosition = new Draw.Position( );
+					endPosition.x = .beginPosition.x + .marginLeft + ( .radius * 2 ) + .marginRight;
+					endPosition.y = .beginPosition.y + .marginTop + ( .radius * 2 ) + .marginBottom;
+					
+					return endPosition;
+				}
+			}
+			/**
+			 * @end
+			 */
+			
+			/**
+			 * @class Ellipse
+			 * @extends Draw.Item.Shape.Shape
+			 * @brief An ellipse
+			 */
+			class Ellipse extends Draw.Item.Shape.Shape
+			{
+				private object centerPosition;
+				private number width;
+				private number height;
+				private boolean filled;
+				
+				public function constructor( )
+				{
+					.beginPosition = null;
+					.centerPosition = null;
+					.width = -1;
+					.height = -1;
+					.filled = false;
+					.lineWidth = 1;
+					.color = new Draw.Color( 0, 0, 0 );
+				}
+				
+				public function setBeginPosition( object position )
+				{
+					.beginPosition = position;
+					if( not .centerPosition )
+						.centerPosition = new Draw.Position( );
+					.centerPosition.x = .beginPosition.x + ( .width / 2.0 );
+					.centerPosition.y = .beginPosition.y + ( .height / 2.0 );
+				}
+				
+				/**
+				 * @function setCenterPosition
+				 * @declaration functions setCenterPosition( object position )
+				 * @brief Set the center position for the circle
+				 * @param object position the center position
+				 */
+				public function setCenterPosition( object position )
+				{
+					.centerPosition = position;
+					if( not .beginPosition )
+						.beginPosition = new Draw.Position( );
+					.beginPosition.x = .centerPosition.x - ( .width / 2.0 );
+					.beginPosition.y = .centerPosition.y - ( .height / 2.0 );
+				}
+				
+				/**
+				 * @function setWidth
+				 * @declaration setWidth( number width )
+				 * @brief Set the width of the rectangle
+				 * @param number width the width of the rectangle
+				 */
+				public function setWidth( number width )
+					.width = width;
+				
+				/**
+				 * @function setHeight
+				 * @declaration function setHeight( number height )
+				 * @brief Set the height of the rectangle
+				 * @param object height the height of the rectangle
+				 */
+				public function setHeight( number height )
+					.height = height;
+				
+				/**
+				 * @function setFilled
+				 * @declaration function setFilled( boolean filled )
+				 * @brief Set if the rectangles should be filled or not
+				 * @param boolean filled true or false
+				 */
+				public function setFilled( boolean filled )
+					.filled = filled;
+				
+				public function render( object document, object context,
+					object beginPosition, object limitPosition )
+				{
+					number width;
+					number height;
+					object ellipseBeginPosition = new Draw.Position( );
+					object endPosition;
+					
+					if( .width != -1 )
+						width = .width;
+					else
+						width = ( limitPosition.x - .marginRight ) - beginPosition.x;
+					
+					if( .height != -1 )
+						height = .height;
+					else
+						height = ( limitPosition.y - .marginBottom ) - beginPosition.y;
+					
+					if( width == 0 or height == 0 )
+						return beginPosition;
+					
+					ellipseBeginPosition.x = beginPosition.x + .marginLeft;
+					ellipseBeginPosition.y = beginPosition.y + .marginTop;
+					
+					.setBeginPosition( ellipseBeginPosition );
+					
+					context.setSourceRGB( .color.red, .color.green, .color.blue );
+					context.setLineWidth( .lineWidth );
+					context.save( );
+					context.translate( .centerPosition.x, .centerPosition.y );
+					context.scale( width / 2, height / 2 );
+					context.newSubPath( );
+					context.arc( 0, 0, 1, 0, 2.0 * Math.pi( ) );
+					context.restore( );
+					
+					if( .filled )
+						context.fill( );
+					else
+						context.stroke( );
+					
+					endPosition = new Draw.Position( );
+					endPosition.x = .beginPosition.x + .marginLeft + .width + .marginRight;
+					endPosition.y = .beginPosition.y + .marginTop + .height + .marginBottom;
+					
+					return endPosition;
+				}
+			}
+			/**
+			 * @end
+			 */
+			
+			/**
+			 * @class EllipseContainer
+			 * @extends Draw.Item.Container
+			 * @brief An ellipse that can contain other items
+			 */
+			class EllipseContainer extends Draw.Item.Container
+			{
+				private object ellipse;
+				private number width;
+				private number height;
+				
+				public function constructor( )
+				{
+					super( );
+					.borderWidth = 0;
+					.ellipse = new Draw.Item.Shape.Ellipse( );
+					.width = -1;
+					.height = -1;
+				}
+				
+				public function setBorderWidth( number borderWidth )
+					.ellipse.setLineWidth( borderWidth );
+				
+				/**
+				 * @function setLineWidth
+				 * @declaration function setLineWidth( number lineWidth )
+				 * @brief Set the line width for the rectangle
+				 * @param number lineWidth the width of the line
+				 */
+				public function setLineWidth( number lineWidth )
+					.ellipse.setLineWidth( lineWidth );
+				
+				/**
+				 * @function setColor
+				 * @declaration function setColor( object color )
+				 * @brief Set the color for the ellipse
+				 * @param object color an instance of a Draw.Color object
+				 */
+				public function setColor( object color )
+					.ellipse.setColor( color );
+				
+				/**
+				 * @function setFilled
+				 * @declaration function setFilled( boolean filled )
+				 * @brief Set if the rectangles should be filled or not
+				 * @param boolean filled true or false
+				 */
+				public function setFilled( boolean filled )
+					.ellipse.setFilled( filled );
+				
+				/**
+				 * @function setWidth
+				 * @declaration setWidth( number width )
+				 * @brief Set the width of the rectangle
+				 * @param number width the width of the rectangle
+				 */
+				public function setWidth( number width )
+					.width = width;
+				
+				/**
+				 * @function setHeight
+				 * @declaration function setHeight( number height )
+				 * @brief Set the height of the rectangle
+				 * @param object height the height of the rectangle
+				 */
+				public function setHeight( number height )
+					.height = height;
+				
+				public function render( object document, object context,
+					object beginPosition, object limitPosition )
+				{
+					number width;
+					number height;
+					object itemLimitPosition;
+					object lastItemEndPosition;
+					object endPosition;
+					
+					itemLimitPosition = new Draw.Position( );
+					itemLimitPosition.x = limitPosition.x; // - .marginRight;
+					itemLimitPosition.y = limitPosition.y; // - .marginBottom;
+					
+					if( .width != -1 )
+						itemLimitPosition.x = beginPosition.x + .marginLeft
+							+ .width + .marginRight;
+					
+					if( .height != -1 )
+						itemLimitPosition.y = beginPosition.y + .marginTop
+							+ .height + .marginBottom;
+					
+					lastItemEndPosition = super.render( document, context,
+						beginPosition, itemLimitPosition );
+					
+					if( .width == -1 )
+						width = limitPosition.x - beginPosition.x
+							- .marginLeft - .marginRight;
+					else
+						width = .width;
+					
+					if( .height == -1 )
+						height = ( lastItemEndPosition.y - .marginBottom )
+							- ( beginPosition.y + .marginTop );
+					else
+						height = .height;
+					
+					.ellipse.setWidth( width );
+					.ellipse.setHeight( height );
+					
+					.ellipse.setMarginTop( .marginTop );
+					// Don't ask right now. It works..
+					//.ellipse.setMarginBottom( .marginBottom );
+					.ellipse.setMarginLeft( .marginLeft );
+					.ellipse.setMarginRight( .marginRight );
+					
+					endPosition = .ellipse.render( document, context,
+						beginPosition, limitPosition );
+					
+					return endPosition;
+				}
+			}
+			/**
+			 * @end
+			 */
+		}
+		/**
+		 * @end
+		 */
+	}
+	/**
+	 * @end
+	 */
+}
+/**
+ * @end
+ */
+
